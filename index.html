@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Balap Mobil 🚗</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Arial', sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #1e3c72, #2a5298);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        h1 {
+            color: #fff;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .score-board {
+            color: #fff;
+            font-size: 22px;
+            margin-bottom: 15px;
+            background: rgba(0,0,0,0.3);
+            padding: 10px 25px;
+            border-radius: 8px;
+        }
+
+        #gameCanvas {
+            border: 4px solid #fff;
+            border-radius: 8px;
+            background: #333;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        .controls {
+            margin-top: 20px;
+            color: #fff;
+            text-align: center;
+        }
+
+        .btn {
+            background: #ff6b35;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 18px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: 0.3s;
+        }
+
+        .btn:hover {
+            background: #e05a28;
+            transform: scale(1.05);
+        }
+
+        .instructions {
+            margin-top: 15px;
+            font-size: 15px;
+            opacity: 0.9;
+            line-height: 1.6;
+        }
+
+        .game-over {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 5px 30px rgba(0,0,0,0.4);
+            z-index: 100;
+        }
+
+        .game-over h2 {
+            color: #e74c3c;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🚗 GAME BALAP MOBIL 🚗</h1>
+    
+    <div class="score-board">
+        Skor: <span id="score">0</span> | Jarak: <span id="distance">0</span> m
+    </div>
+
+    <canvas id="gameCanvas" width="400" height="600"></canvas>
+
+    <div class="controls">
+        <button class="btn" onclick="startGame()">Mulai Game</button>
+        <div class="instructions">
+            ⬅️ ➡️ Gunakan tombol panah kiri dan kanan untuk menggerakkan mobil<br>
+            🎯 Hindari mobil lain dan kumpulkan skor sebanyak-banyaknya!
+        </div>
+    </div>
+
+    <!-- Kotak Game Over -->
+    <div class="game-over" id="gameOverBox">
+        <h2>💥 GAME OVER!</h2>
+        <p>Skor Akhir: <span id="finalScore">0</span></p>
+        <p>Jarak Tempuh: <span id="finalDistance">0</span> m</p>
+        <button class="btn" onclick="restartGame()">Main Lagi</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Variabel Game
+        let gameRunning = false;
+        let score = 0;
+        let distance = 0;
+        let speed = 5;
+        let animationId;
+
+        // Mobil Pemain
+        const player = {
+            x: 175,
+            y: 500,
+            width: 50,
+            height: 80,
+            color: '#ffcc00'
+        };
+
+        // Mobil Musuh
+        let enemies = [];
+        let enemySpawnRate = 100;
+        let frameCount = 0;
+
+        // Tombol ditekan
+        let keys = {
+            left: false,
+            right: false
+        };
+
+        // Gambar Jalan
+        function drawRoad() {
+            ctx.fillStyle = '#444';
+            ctx.fillRect(50, 0, 300, 600);
+            
+            // Garis pinggir
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(55, 0, 5, 600);
+            ctx.fillRect(340, 0, 5, 600);
+            
+            // Garis tengah
+            ctx.fillStyle = '#ffff00';
+            for(let i = 0; i < 600; i += 40) {
+                ctx.fillRect(195, i, 10, 20);
+            }
+        }
+
+        // Gambar Mobil
+        function drawCar(x, y, width, height, color) {
+            ctx.fillStyle = color;
+            ctx.fillRect(x, y, width, height);
+            
+            // Kaca depan
+            ctx.fillStyle = '#aaddff';
+            ctx.fillRect(x + 5, y + 15, width - 10, 20);
+            
+            // Lampu
+            ctx.fillStyle = '#ffff00';
+            ctx.fillRect(x + 3, y + 5, 8, 5);
+            ctx.fillRect(x + width - 11, y + 5, 8, 5);
+        }
+
+        // Buat Musuh Baru
+        function spawnEnemy() {
+            const lanes = [75, 175, 275];
+            const lane = lanes[Math.floor(Math.random() * lanes.length)];
+            const colors = ['#e74c3c', '#3498db', '#2ecc71', '#9b59b6', '#1abc9c'];
+            
+            enemies.push({
+                x: lane,
+                y: -100,
+                width: 50,
+                height: 80,
+                color: colors[Math.floor(Math.random() * colors.length)],
+                speed: speed + Math.random() * 2
+            });
+        }
+
+        // Deteksi Tabrakan
+        function checkCollision(a, b) {
+            return (
+                a.x < b.x + b.width &&
+                a.x + a.width > b.x &&
+                a.y < b.y + b.height &&
+                a.y + a.height > b.y
+            );
+        }
+
+        // Update Game
+        function update() {
+            if (!gameRunning) return;
+
+            frameCount++;
+            distance += speed / 10;
+            score = Math.floor(distance / 10);
+
+            // Gerakkan mobil pemain
+            if (keys.left && player.x > 60) player.x -= 5;
+            if (keys.right && player.x < 290) player.x += 5;
+
+            // Tambah kecepatan seiring waktu
+            if (frameCount % 500 === 0) speed += 0.5;
+
+            // Munculkan musuh
+            if (frameCount % enemySpawnRate === 0) spawnEnemy();
+
+            // Gerakkan musuh & hapus yang keluar layar
+            enemies.forEach((enemy, index) => {
+                enemy.y += enemy.speed;
+                
+                if (enemy.y > canvas.height) {
+                    enemies.splice(index, 1);
+                }
+
+                // Cek tabrakan
+                if (checkCollision(player, enemy)) {
+                    gameOver();
+                }
+            });
+
+            // Update tampilan skor
+            document.getElementById('score').textContent = score;
+            document.getElementById('distance').textContent = Math.floor(distance);
+        }
+
+        // Gambar Semua Elemen
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            drawRoad();
+            drawCar(player.x, player.y, player.width, player.height, player.color);
+            
+            enemies.forEach(enemy => {
+                drawCar(enemy.x, enemy.y, enemy.width, enemy.height, enemy.color);
+            });
+        }
+
+        // Loop Game
+        function gameLoop() {
+            update();
+            draw();
+            if (gameRunning) {
+                animationId = requestAnimationFrame(gameLoop);
+            }
+        }
+
+        // Mulai Game
+        function startGame() {
+            gameRunning = true;
+            score = 0;
+            distance = 0;
+            speed = 5;
+            frameCount = 0;
+            enemies = [];
+            player.x = 175;
+            document.getElementById('gameOverBox').style.display = 'none';
+            gameLoop();
+        }
+
+        // Game Over
+        function gameOver() {
+            gameRunning = false;
+            cancelAnimationFrame(animationId);
+            document.getElementById('finalScore').textContent = score;
+            document.getElementById('finalDistance').textContent = Math.floor(distance);
+            document.getElementById('gameOverBox').style.display = 'block';
+        }
+
+        // Ulangi Game
+        function restartGame() {
+            startGame();
+        }
+
+        // Kontrol Keyboard
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') keys.left = true;
+            if (e.key === 'ArrowRight') keys.right = true;
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft') keys.left = false;
+            if (e.key === 'ArrowRight') keys.right = false;
+        });
+    </script>
+    
+</body>
+</html>
